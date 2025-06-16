@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>WebSocket Call Test</title>
+</head>
+<body>
+  <h2>📞 Call Events</h2>
+  <ul id="events"></ul>
+
+  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+  <script>
+    const socket = io("http://localhost:3000");
+
+    socket.on("connect", () => {
+      console.log("Connected with socket ID:", socket.id);
+    });
+
+    socket.on("callInitiated", (data) => {
+      const li = document.createElement("li");
+      li.textContent = `✅ ${data.caller} called ${data.receiver}`;
+      document.getElementById("events").appendChild(li);
+    });
+
+    socket.on("collision", (data) => {
+      const li = document.createElement("li");
+      li.textContent = `❗ Collision: ${data.caller} and ${data.receiver} called each other!`;
+      li.style.color = "red";
+      document.getElementById("events").appendChild(li);
+    });
+  </script>
+</body>
+</html>
