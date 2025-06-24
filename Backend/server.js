@@ -37,51 +37,91 @@ const redisClient = createClient({
   },
 });
 
-redisClient.connect().catch(console.error);
+// redisClient.connect().catch(console.error);
+redisClient.connect()
+  .then(() => console.log("✅ Redis connected"))
+  .catch(console.error);
+
 
 io.on('connection', (socket) => {
   console.log('🔌 New client connected:', socket.id);
 });
 
 
+
+
+
+const userSockets = new Map(); // callerId => socket.id
+
+io.on('connection', (socket) => {
+  console.log('🔌 New client connected:', socket.id);
+
+  socket.on("register", (callerId) => {
+    userSockets.set(callerId, socket.id);
+    console.log(`📲 Registered socket for: ${callerId}`);
+  });
+
+  socket.on("disconnect", () => {
+    for (const [user, id] of userSockets.entries()) {
+      if (id === socket.id) {
+        userSockets.delete(user);
+        break;
+      }
+    }
+    console.log(`❌ Socket disconnected: ${socket.id}`);
+  });
+});
+
+
+
+
 app.post('/call', async (req, res) => {
   const { caller, receiver } = req.body;
-  console.log("📞 Call API hit with:", caller, receiver);
-
   const callKey = `call:${caller}:${receiver}`;
   const reverseKey = `call:${receiver}:${caller}`;
+  const callerSocketId = userSockets.get(caller);
 
-  // Check if receiver already called caller (i.e. reverse exists)
-  const reverseExists = await redisClient.exists(reverseKey);
-  const currentExists = await redisClient.exists(callKey);
+  try {
+    const [forwardExists, reverseExists] = await Promise.all([
+      redisClient.exists(callKey),
+      redisClient.exists(reverseKey),
+    ]);
 
-  if (reverseExists) {
-    // Reverse already exists → other side initiated first
-    io.emit("callRejected", {
-      caller,
-      receiver,
-      status: "another user called first",
-    });
+    if (forwardExists) {
+      // Duplicate call from same user (ignore)
+      return res.status(200).json({ message: "Call already active." });
+    }
 
-    return res.status(200).json({ message: "Call rejected due to collision - other caller was first." });
+    if (reverseExists) {
+      // Collision: the other user initiated first
+      if (callerSocketId) {
+        io.to(callerSocketId).emit("callRejected", {
+          caller,
+          receiver,
+          status: "❌ Rejected — Receiver already called you first.",
+        });
+      }
+      return res.status(200).json({ message: "Collision: reverse call exists." });
+    }
+
+    // First valid call
+    await redisClient.set(callKey, "active", { EX: 30 }); // expires in 30s
+
+    if (callerSocketId) {
+      io.to(callerSocketId).emit("callAccepted", {
+        caller,
+        receiver,
+        status: "✅ Call accepted",
+      });
+    }
+
+    return res.status(200).json({ message: "Call initiated." });
+  } catch (err) {
+    console.error("❌ Redis error:", err);
+    return res.status(500).json({ error: "Server error." });
   }
-
-  if (!currentExists) {
-    // No collision: this is the first call
-    await redisClient.set(callKey, "active", { EX: 30 });
-
-    io.emit("callAccepted", {
-      caller,
-      receiver,
-      status: "✅ Call accepted (first caller)",
-    });
-
-    return res.status(200).json({ message: "Call accepted." });
-  }
-
-  // If the callKey already exists, don’t allow repeat calls
-  return res.status(200).json({ message: "Call already active." });
 });
+
 
 
 const PORT = process.env.PORT || 3000;
