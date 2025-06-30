@@ -3,7 +3,8 @@ import io from "socket.io-client";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 
-const socket = io("http://localhost:3000");
+const socket = io(process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000");
+
 
 export default function CallSimulator() {
   const [caller, setCaller] = useState("");
@@ -45,11 +46,12 @@ export default function CallSimulator() {
     if (!caller || !receiver) return;
     setActiveCall({ caller, receiver, status: "ringing" });
     try {
-      await fetch("http://localhost:3000/call", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ caller, receiver }),
-      });
+     await fetch(`${process.env.NEXT_PUBLIC_API_URL}/call`, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ caller, receiver }),
+});
+
     } catch (err) {
       console.error("API Error:", err);
     }
