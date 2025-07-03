@@ -6,52 +6,46 @@ const dotenv = require('dotenv');
 const cors = require('cors');
 const path = require("path");
 
-
-
 dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: { origin: '*' },
+  cors: {
+    origin: "busy-call-collision-handling.vercel.app", // replace with real frontend URL
+    methods: ["GET", "POST"],
+    credentials: true,
+  }
 });
 
 app.use(cors());
 app.use(express.json());
-
-
-// Serve static files from /public
 app.use(express.static(path.join(__dirname, "public")));
 
-// 🔄 Optional: You can add a default route
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public/index.html"));
-})
- 
-
+});
 
 const redisClient = createClient({
-  socket: {
-    host: process.env.REDIS_HOST,
-    port: process.env.REDIS_PORT,
-  },
+  
+  url: process.env.REDIS_URL,
+
+   socket: {
+    tls: true,
+    reconnectStrategy: retries => Math.min(retries * 100, 3000)
+   }
 });
 
-// redisClient.connect().catch(console.error);
+redisClient.on("error", (err) => {
+  console.error("❌ Redis connection error:", err);
+});
+
+
 redisClient.connect()
   .then(() => console.log("✅ Redis connected"))
-  .catch(console.error);
+ .catch((err) => console.error("❌ Redis connect failed:", err));
 
-
-io.on('connection', (socket) => {
-  console.log('🔌 New client connected:', socket.id);
-});
-
-
-
-
-
-const userSockets = new Map(); // callerId => socket.id
+const userSockets = new Map();
 
 io.on('connection', (socket) => {
   console.log('🔌 New client connected:', socket.id);
@@ -72,9 +66,6 @@ io.on('connection', (socket) => {
   });
 });
 
-
-
-
 app.post('/call', async (req, res) => {
   const { caller, receiver } = req.body;
   const callKey = `call:${caller}:${receiver}`;
@@ -88,12 +79,10 @@ app.post('/call', async (req, res) => {
     ]);
 
     if (forwardExists) {
-      // Duplicate call from same user (ignore)
       return res.status(200).json({ message: "Call already active." });
     }
 
     if (reverseExists) {
-      // Collision: the other user initiated first
       if (callerSocketId) {
         io.to(callerSocketId).emit("callRejected", {
           caller,
@@ -104,8 +93,7 @@ app.post('/call', async (req, res) => {
       return res.status(200).json({ message: "Collision: reverse call exists." });
     }
 
-    // First valid call
-    await redisClient.set(callKey, "active", { EX: 30 }); // expires in 30s
+    await redisClient.set(callKey, "active", { EX: 30 });
 
     if (callerSocketId) {
       io.to(callerSocketId).emit("callAccepted", {
@@ -121,8 +109,6 @@ app.post('/call', async (req, res) => {
     return res.status(500).json({ error: "Server error." });
   }
 });
-
-
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
