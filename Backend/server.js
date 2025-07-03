@@ -12,13 +12,25 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "busy-call-collision-handling.vercel.app", // replace with real frontend URL
+    origin: [
+      "https://busy-call-collision-handling.vercel.app",
+      "http://localhost:5173"
+    ],
     methods: ["GET", "POST"],
     credentials: true,
   }
 });
 
-app.use(cors());
+
+// app.use(cors());
+app.use(cors({
+  origin: [
+    "https://busy-call-collision-handling.vercel.app",
+    "http://localhost:5173"
+  ],
+  credentials: true
+}));
+
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
